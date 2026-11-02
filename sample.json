@@ -1,0 +1,5 @@
+{
+  "event": "demo",
+  "message": "Hello from Amazon Data Firehose",
+  "source": "firehose-s3-demo"
+}

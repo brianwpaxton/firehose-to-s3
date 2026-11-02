@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Demo delivery stream that writes JSON records to an encrypted S3 bucket.
+
+Resources:
+  DestinationBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FirehoseDeliveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/*
+      Policies:
+        - PolicyName: WriteToDestinationBucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt DestinationBucket.Arn
+                  - !Sub "${DestinationBucket.Arn}/*"
+
+  DeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt DestinationBucket.Arn
+        RoleARN: !GetAtt FirehoseDeliveryRole.Arn
+        Prefix: records/!{timestamp:yyyy/MM/dd}/
+        ErrorOutputPrefix: errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1
+        CompressionFormat: GZIP
+
+Outputs:
+  DeliveryStreamName:
+    Description: Name to pass to the sample producer.
+    Value: !Ref DeliveryStream
+  DeliveryStreamArn:
+    Description: ARN of the Firehose delivery stream.
+    Value: !GetAtt DeliveryStream.Arn
+  DestinationBucketName:
+    Description: S3 bucket receiving Firehose records.
+    Value: !Ref DestinationBucket
